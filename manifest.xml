@@ -12,8 +12,8 @@
   <DefaultLocale>fr-FR</DefaultLocale>
   <DisplayName DefaultValue="SlideTranslate AI"/>
   <Description DefaultValue="Traduire des slides en conservant au maximum la mise en forme."/>
-  <IconUrl DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/assets/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/assets/icon-80.png"/>
+  <IconUrl DefaultValue="https://azertiv.github.io/neurow-ppt-translate/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://azertiv.github.io/neurow-ppt-translate/assets/icon-80.png"/>
   <SupportUrl DefaultValue="https://github.com/YOUR_GITHUB_USER/YOUR_REPO"/>
 
   <AppDomains>
@@ -31,7 +31,7 @@
   </Requirements>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/taskpane.html"/>
+    <SourceLocation DefaultValue="https://azertiv.github.io/neurow-ppt-translate/taskpane.html"/>
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -75,13 +75,13 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16" DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/assets/icon-16.png"/>
-        <bt:Image id="Icon.32" DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/assets/icon-32.png"/>
-        <bt:Image id="Icon.80" DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/assets/icon-80.png"/>
+        <bt:Image id="Icon.16" DefaultValue="https://azertiv.github.io/neurow-ppt-translate/assets/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="https://azertiv.github.io/neurow-ppt-translate/assets/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="https://azertiv.github.io/neurow-ppt-translate/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/taskpane.html"/>
-        <bt:Url id="Commands.Url" DefaultValue="https://YOUR_GITHUB_USER.github.io/YOUR_REPO/commands.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://azertiv.github.io/neurow-ppt-translate/taskpane.html"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://azertiv.github.io/neurow-ppt-translate/commands.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Group.Label" DefaultValue="SlideTranslate"/>
