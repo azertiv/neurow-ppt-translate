@@ -1,0 +1,441 @@
+:root {
+  --bg0: #0a1023;
+  --bg1: #0d1630;
+  --panel: rgba(255, 255, 255, 0.08);
+  --panel2: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.72);
+  --faint: rgba(255, 255, 255, 0.55);
+  --brand: #5b7cfa;
+  --accent: #34d3a5;
+  --warn: #ffb84d;
+  --err: #ff4d6d;
+  --radius: 16px;
+  --shadow: 0 20px 70px rgba(0, 0, 0, 0.42);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: radial-gradient(1200px 700px at 20% -10%, rgba(91, 124, 250, 0.35), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(52, 211, 165, 0.22), transparent 55%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
+  color: var(--text);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10, 16, 35, 0.7);
+  backdrop-filter: blur(10px);
+}
+
+.brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(91, 124, 250, 0.9), rgba(52, 211, 165, 0.9));
+  display: grid;
+  place-items: center;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.logo svg {
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.25));
+}
+
+.logoSquare {
+  fill: rgba(255, 255, 255, 0.18);
+}
+
+.logoLines {
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.brandTitle {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.brandSub {
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 2px;
+}
+
+.status {
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.status.ok {
+  border-color: rgba(52, 211, 165, 0.35);
+}
+
+.status.busy {
+  border-color: rgba(91, 124, 250, 0.45);
+}
+
+.status.err {
+  border-color: rgba(255, 77, 109, 0.45);
+}
+
+.content {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.card h2 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.grid2 {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 360px) {
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.select,
+.input,
+.textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  padding: 10px 10px;
+  outline: none;
+}
+
+.select:focus,
+.input:focus,
+.textarea:focus {
+  border-color: rgba(91, 124, 250, 0.65);
+  box-shadow: 0 0 0 3px rgba(91, 124, 250, 0.18);
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 74px;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.hint code {
+  font-family: var(--mono);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.hint.warn {
+  color: rgba(255, 184, 77, 0.95);
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.segBtn {
+  flex: 1;
+  padding: 10px 8px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.12);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.segBtn.active {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(91, 124, 250, 0.35), rgba(52, 211, 165, 0.22));
+}
+
+.accordion {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.accordionHeader {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.14);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.accordionBody {
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.10);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fieldRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex: 0 0 auto;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch .slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  transition: 0.2s;
+  border-radius: 999px;
+}
+
+.switch .slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  top: 2px;
+  background: rgba(255, 255, 255, 0.92);
+  transition: 0.2s;
+  border-radius: 999px;
+}
+
+.switch input:checked + .slider {
+  background: rgba(52, 211, 165, 0.28);
+  border-color: rgba(52, 211, 165, 0.45);
+}
+
+.switch input:checked + .slider:before {
+  transform: translateX(20px);
+}
+
+.switchTitle {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.sliderRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ctaRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.btn,
+.btnPrimary,
+.btnGhost {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.btn {
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.btnPrimary {
+  background: linear-gradient(135deg, rgba(91, 124, 250, 0.95), rgba(52, 211, 165, 0.95));
+  box-shadow: 0 18px 40px rgba(91, 124, 250, 0.18);
+}
+
+.btnGhost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--muted);
+}
+
+.btnSmall {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn:disabled,
+.btnPrimary:disabled,
+.btnGhost:disabled,
+.btnSmall:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.progress {
+  margin-top: 12px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressBar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(91, 124, 250, 0.95), rgba(52, 211, 165, 0.95));
+  transition: width 0.2s ease;
+}
+
+.metrics {
+  margin-top: 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.logs .logBox {
+  margin-top: 8px;
+  height: 180px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.18);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.logLine {
+  padding: 2px 0;
+}
+
+.logLine.dim {
+  color: rgba(255, 255, 255, 0.60);
+}
+
+.logLine.warn {
+  color: rgba(255, 184, 77, 0.95);
+}
+
+.logLine.error {
+  color: rgba(255, 77, 109, 0.95);
+}
+
+.footer {
+  margin-top: auto;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(10, 16, 35, 0.55);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+}

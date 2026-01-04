@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' https://appsforoffice.microsoft.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://appsforoffice.microsoft.com; connect-src 'self' https://api.openai.com; frame-ancestors 'self' https://*.office.com https://*.officeapps.live.com;"
+    />
+    <title>SlideTranslate AI</title>
+    <link rel="stylesheet" href="/src/taskpane/taskpane.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <img class="brandLogo" src="/assets/icon-80.png" alt="" />
+          <div>
+            <div class="brandTitle">SlideTranslate AI</div>
+            <div class="brandSub">Traduction PowerPoint en gardant le style</div>
+          </div>
+        </div>
+        <div class="status" id="statusPill">Prêt</div>
+      </header>
+
+      <main class="content">
+        <section class="card">
+          <h2>Traduire</h2>
+          <div class="grid2">
+            <div class="field">
+              <label for="fromLang">Langue source</label>
+              <select id="fromLang" class="select"></select>
+              <div class="hint">Astuce : tu peux choisir « Auto-détecter ».</div>
+            </div>
+            <div class="field">
+              <label for="toLang">Langue cible</label>
+              <select id="toLang" class="select"></select>
+            </div>
+          </div>
+
+          <div class="grid2" style="margin-top: 12px">
+            <div class="field">
+              <label>Portée</label>
+              <div class="segmented" role="tablist" aria-label="Portée">
+                <button id="scopeCurrent" class="segBtn active" role="tab" aria-selected="true">Slide actuelle</button>
+                <button id="scopeAll" class="segBtn" role="tab" aria-selected="false">Toutes les slides</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Mode</label>
+              <div class="segmented" role="tablist" aria-label="Mode">
+                <button id="modeApply" class="segBtn active" role="tab" aria-selected="true">Appliquer</button>
+                <button id="modePreview" class="segBtn" role="tab" aria-selected="false">Prévisualiser</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion" style="margin-top: 14px">
+            <button class="accordionHeader" id="advancedToggle" aria-expanded="false">
+              <span>Options avancées</span>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <div class="accordionBody" id="advancedBody" hidden>
+              <div class="fieldRow">
+                <label class="switch">
+                  <input type="checkbox" id="keepLineBreaks" checked />
+                  <span class="slider"></span>
+                </label>
+                <div>
+                  <div class="switchTitle">Conserver les retours à la ligne</div>
+                  <div class="hint">Garde les sauts de ligne existants pour respecter la mise en page.</div>
+                </div>
+              </div>
+
+              <div class="fieldRow">
+                <label class="switch">
+                  <input type="checkbox" id="fitToLength" />
+                  <span class="slider"></span>
+                </label>
+                <div style="flex: 1">
+                  <div class="switchTitle">Adapter la longueur (léger)</div>
+                  <div class="hint">Le modèle reformule un peu pour coller à la longueur initiale.</div>
+                  <div class="sliderRow">
+                    <input type="range" id="fitStrength" min="0" max="100" value="60" />
+                    <div class="pill" id="fitStrengthLabel">60%</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="glossary">Glossaire (optionnel)</label>
+                <textarea id="glossary" class="textarea" rows="3" placeholder="Ex: KPI=KPI\nRoadmap=Feuille de route"></textarea>
+                <div class="hint">Une entrée par ligne : <code>Terme=Traduction</code>.</div>
+              </div>
+
+              <div class="field">
+                <label for="ignoreRegex">Ignorer (nom de shape) – regex (optionnel)</label>
+                <input id="ignoreRegex" class="input" placeholder="Ex: ^(Logo|Footer)" />
+              </div>
+
+              <div class="fieldRow">
+                <label class="switch">
+                  <input type="checkbox" id="applyUnderline" checked />
+                  <span class="slider"></span>
+                </label>
+                <div>
+                  <div class="switchTitle">Restaurer l'underline</div>
+                  <div class="hint">Si tu as des erreurs sur Mac, désactive cette option.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ctaRow">
+            <button class="btn" id="analyzeBtn">Analyser</button>
+            <button class="btnPrimary" id="translateBtn">Traduire</button>
+            <button class="btnGhost" id="cancelBtn" disabled>Annuler</button>
+          </div>
+
+          <div class="progress" aria-label="progress">
+            <div class="progressBar" id="progressBar"></div>
+          </div>
+          <div class="metrics" id="metrics"></div>
+        </section>
+
+        <section class="card">
+          <div class="cardHeader">
+            <h2>Clé OpenAI</h2>
+            <button class="btnSmall" id="testKeyBtn">Tester</button>
+          </div>
+          <div class="field">
+            <label for="apiKey">API key</label>
+            <input id="apiKey" class="input" type="password" placeholder="sk-..." autocomplete="off" />
+            <div class="hint warn">⚠️ Mettre la clé côté client n'est pas sécurisé. Pour un usage pro, utilise un proxy serveur.</div>
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label for="model">Modèle</label>
+              <select id="model" class="select">
+                <option value="gpt-5.2">gpt-5.2</option>
+                <option value="gpt-5-mini">gpt-5-mini</option>
+                <option value="gpt-4.1">gpt-4.1</option>
+                <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="temperature">Température</label>
+              <input id="temperature" class="input" type="number" min="0" max="1" step="0.05" value="0.15" />
+            </div>
+          </div>
+        </section>
+
+        <section class="card logs">
+          <div class="cardHeader">
+            <h2>Journal</h2>
+            <button class="btnSmall" id="clearLogsBtn">Effacer</button>
+          </div>
+          <div class="logBox" id="logBox" role="log" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div>Conseil : utilise <span class="pill">Prévisualiser</span> avant <span class="pill">Appliquer</span> sur tout un deck.</div>
+      </footer>
+    </div>
+
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script type="module" src="/src/taskpane/taskpane.ts"></script>
+  </body>
+</html>
