@@ -250,6 +250,22 @@ export async function extractSlideTargets(
 
     const shapeTextTargets: ShapeTextTarget[] = [];
     const tableCellTargets: TableCellTarget[] = [];
+    const textCandidates: Array<{
+      shapeId: string;
+      shapeName: string;
+      shapePath: string;
+      shapeRef: string;
+      groupPath: string[];
+      textRange: PowerPoint.TextRange;
+      textFrame: PowerPoint.TextFrame;
+    }> = [];
+    const tableShapes: Array<{
+      shapeId: string;
+      shapeName: string;
+      shapePath: string;
+      groupPath: string[];
+      table: PowerPoint.Table;
+    }> = [];
 
     await walkShapes(context, slide.shapes, ignore, logger, async (shape, groupPath, groupNamePath) => {
       const shapeId = shape.id;
@@ -260,75 +276,137 @@ export async function extractSlideTargets(
       if ((shape.type as any) === PowerPoint.ShapeType.table) {
         const table = shape.getTable();
         table.load("rowCount,columnCount");
-        await context.sync();
-
-        const cellObjs: PowerPoint.TableCell[] = [];
-        const coords: Array<{ r: number; c: number }> = [];
-
-        for (let r = 0; r < table.rowCount; r++) {
-          for (let c = 0; c < table.columnCount; c++) {
-            const cell = table.getCellOrNullObject(r, c);
-            cell.load("isNullObject,textRuns,text");
-            cellObjs.push(cell);
-            coords.push({ r, c });
-          }
-        }
-        await context.sync();
-
-        for (let i = 0; i < cellObjs.length; i++) {
-          const cell = cellObjs[i];
-          if ((cell as any).isNullObject) continue;
-
-          const runs = (cell as any).textRuns as any[];
-          const text = (cell as any).text as string;
-          if (!text || !text.trim()) continue;
-
-          const runSnapshots: TableRunSnapshot[] = Array.isArray(runs) && runs.length
-            ? runs.map((tr) => ({ text: tr.text ?? "", font: tr.font }))
-            : [{ text, font: undefined }];
-
-          const id = `s${slideIndex}_shape${shapeRef}_cell${coords[i].r}_${coords[i].c}`;
-          tableCellTargets.push({
-            kind: "tableCell",
-            shapeId,
-            shapeName,
-            groupPath: [...groupPath],
-            shapePath,
-            row: coords[i].r,
-            col: coords[i].c,
-            paragraphId: id,
-            originalChars: text.length,
-            runs: runSnapshots
-          });
-        }
+        tableShapes.push({
+          shapeId,
+          shapeName,
+          shapePath,
+          groupPath: [...groupPath],
+          table
+        });
         return;
       }
 
       const tf = shape.getTextFrameOrNullObject();
       tf.load("isNullObject,hasText");
-      await context.sync();
-      if (tf.isNullObject || !tf.hasText) return;
-
-      const paragraphs = await extractShapeTextParagraphs(
-        context,
-        tf.textRange,
-        slideIndex,
-        shapeRef,
-        shapeName
-      );
-
-      const useful = paragraphs.some((p) => p.runs.some((r) => r.text.trim().length > 0));
-      if (!useful) return;
-
-      shapeTextTargets.push({
-        kind: "shapeText",
+      textCandidates.push({
         shapeId,
         shapeName,
-        groupPath: [...groupPath],
         shapePath,
-        paragraphs
+        shapeRef,
+        groupPath: [...groupPath],
+        textRange: tf.textRange,
+        textFrame: tf
       });
     });
+
+    if (textCandidates.length || tableShapes.length) {
+      await context.sync();
+    }
+
+    const cellEntries: Array<{
+      shapeId: string;
+      shapeName: string;
+      shapePath: string;
+      groupPath: string[];
+      row: number;
+      col: number;
+      cell: PowerPoint.TableCell;
+    }> = [];
+    let needsSecondSync = false;
+
+    if (textCandidates.length) {
+      for (const candidate of textCandidates) {
+        if (candidate.textFrame.isNullObject || !candidate.textFrame.hasText) continue;
+        candidate.textRange.load("text");
+        needsSecondSync = true;
+      }
+    }
+
+    if (tableShapes.length) {
+      for (const entry of tableShapes) {
+        const table = entry.table;
+        const rowCount = table.rowCount;
+        const columnCount = table.columnCount;
+        for (let r = 0; r < rowCount; r++) {
+          for (let c = 0; c < columnCount; c++) {
+            const cell = table.getCellOrNullObject(r, c);
+            cell.load("isNullObject,textRuns,text");
+            cellEntries.push({
+              shapeId: entry.shapeId,
+              shapeName: entry.shapeName,
+              shapePath: entry.shapePath,
+              groupPath: entry.groupPath,
+              row: r,
+              col: c,
+              cell
+            });
+            needsSecondSync = true;
+          }
+        }
+      }
+    }
+
+    if (needsSecondSync) {
+      await context.sync();
+    }
+
+    if (textCandidates.length) {
+      for (const candidate of textCandidates) {
+        if (candidate.textFrame.isNullObject || !candidate.textFrame.hasText) continue;
+        const text = candidate.textRange.text ?? "";
+        if (!text.trim()) continue;
+
+        const paragraphs = await extractShapeTextParagraphs(
+          context,
+          candidate.textRange,
+          slideIndex,
+          candidate.shapeRef,
+          text
+        );
+
+        const useful = paragraphs.some((p) => p.runs.some((r) => r.text.trim().length > 0));
+        if (!useful) continue;
+
+        shapeTextTargets.push({
+          kind: "shapeText",
+          shapeId: candidate.shapeId,
+          shapeName: candidate.shapeName,
+          groupPath: [...candidate.groupPath],
+          shapePath: candidate.shapePath,
+          paragraphs
+        });
+      }
+    }
+
+    if (cellEntries.length) {
+      for (const entry of cellEntries) {
+        const cellAny = entry.cell as any;
+        if (cellAny.isNullObject) continue;
+
+        const runs = cellAny.textRuns as any[];
+        const text = cellAny.text as string;
+        if (!text || !text.trim()) continue;
+
+        const runSnapshots: TableRunSnapshot[] = Array.isArray(runs) && runs.length
+          ? runs.map((tr) => ({ text: tr.text ?? "", font: tr.font }))
+          : [{ text, font: undefined }];
+
+        const shapeRef = shapeKey(entry.shapeId, entry.groupPath);
+        const id = `s${slideIndex}_shape${shapeRef}_cell${entry.row}_${entry.col}`;
+        tableCellTargets.push({
+          kind: "tableCell",
+          shapeId: entry.shapeId,
+          shapeName: entry.shapeName,
+          groupPath: [...entry.groupPath],
+          shapePath: entry.shapePath,
+          row: entry.row,
+          col: entry.col,
+          paragraphId: id,
+          originalChars: text.length,
+          runs: runSnapshots
+        });
+      }
+    }
 
     logger?.log(
       `Slide ${slideIndex + 1}: ${shapeTextTargets.length} shape(s) texte, ${tableCellTargets.length} cellule(s) de table`,
@@ -520,6 +598,8 @@ export async function applySlideTranslations(
   await PowerPoint.run(async (context) => {
     const slide = context.presentation.slides.getItemAt(slideIndex);
     const shapeIndex = await buildShapeIndex(context, slide, logger);
+    const textFrames: Array<{ target: ShapeTextTarget; textFrame: PowerPoint.TextFrame }> = [];
+    const tableCells: Array<{ target: TableCellTarget; cell: PowerPoint.TableCell }> = [];
 
     // Shapes (text frames)
     for (const st of targets.shapeTextTargets) {
@@ -531,7 +611,30 @@ export async function applySlideTranslations(
       }
       const tf = shape.getTextFrameOrNullObject();
       tf.load("isNullObject,hasText");
+      textFrames.push({ target: st, textFrame: tf });
+    }
+
+    // Tables
+    for (const tc of targets.tableCellTargets) {
+      const key = shapeKey(tc.shapeId, tc.groupPath);
+      const shape = shapeIndex.get(key) ?? slide.shapes.getItem(tc.shapeId);
+      if (!shape) {
+        logger?.log(`Table introuvable: ${tc.shapePath || tc.shapeName || tc.shapeId}`, "dim");
+        continue;
+      }
+      const table = shape.getTable();
+      const cell = table.getCellOrNullObject(tc.row, tc.col);
+      cell.load("isNullObject");
+      tableCells.push({ target: tc, cell });
+    }
+
+    if (textFrames.length || tableCells.length) {
       await context.sync();
+    }
+
+    for (const entry of textFrames) {
+      const st = entry.target;
+      const tf = entry.textFrame;
       if (tf.isNullObject || !tf.hasText) continue;
 
       const updatedParagraphs: Paragraph[] = st.paragraphs.map((p) => {
@@ -549,16 +652,10 @@ export async function applySlideTranslations(
       logger?.log(`Appliqué: ${st.shapePath || st.shapeName || st.shapeId}`, "dim");
     }
 
-    // Tables
-    for (const tc of targets.tableCellTargets) {
-      const key = shapeKey(tc.shapeId, tc.groupPath);
-      const shape = shapeIndex.get(key) ?? slide.shapes.getItem(tc.shapeId);
-      if (!shape) {
-        logger?.log(`Table introuvable: ${tc.shapePath || tc.shapeName || tc.shapeId}`, "dim");
-        continue;
-      }
-      const table = shape.getTable();
-      const cell = table.getCellOrNullObject(tc.row, tc.col);
+    for (const entry of tableCells) {
+      const tc = entry.target;
+      const cell = entry.cell;
+      if ((cell as any).isNullObject) continue;
 
       const tr = translationMap.get(tc.paragraphId);
       if (!tr) continue;
@@ -569,22 +666,17 @@ export async function applySlideTranslations(
         font: r.font
       }));
 
-      const cellAny = cell as any;
-      if (cellAny && typeof cellAny.set === "function") {
-        cellAny.set({ textRuns: newTextRuns });
-      } else {
-        const fullText = newTextRuns.map((r) => r.text).join("");
-        const range = cell.textRange;
-        range.text = fullText;
-        let offset = 0;
-        const spans = newTextRuns.map((r) => {
-          const length = r.text.length;
-          const span = { start: offset, length, font: coerceFontSnapshot(r.font) };
-          offset += length;
-          return span;
-        });
-        queueFontRuns(range, spans, settings);
-      }
+      const fullText = newTextRuns.map((r) => r.text).join("");
+      const range = cell.textRange;
+      range.text = fullText;
+      let offset = 0;
+      const spans = newTextRuns.map((r) => {
+        const length = r.text.length;
+        const span = { start: offset, length, font: coerceFontSnapshot(r.font) };
+        offset += length;
+        return span;
+      });
+      queueFontRuns(range, spans, settings);
     }
 
     await context.sync();

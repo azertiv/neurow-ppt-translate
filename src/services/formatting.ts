@@ -65,27 +65,64 @@ export async function extractParagraphFormat(
   range: PowerPoint.TextRange
 ): Promise<ParagraphFormatSnapshot | undefined> {
   const out: ParagraphFormatSnapshot = {};
+  const wantsBulletDetails = isApiSupported("1.10");
 
-  // Safe-ish first pass
-  range.load("paragraphFormat/indentLevel,paragraphFormat/bulletFormat/visible");
-  await context.sync();
-  out.indentLevel = range.paragraphFormat.indentLevel ?? undefined;
-  out.bulletVisible = range.paragraphFormat.bulletFormat.visible ?? undefined;
-
-  // Horizontal alignment may throw on some hosts depending on OOXML.
   try {
-    range.load("paragraphFormat/horizontalAlignment");
+    const props = [
+      "paragraphFormat/indentLevel",
+      "paragraphFormat/bulletFormat/visible",
+      "paragraphFormat/horizontalAlignment"
+    ];
+    if (wantsBulletDetails) {
+      props.push("paragraphFormat/bulletFormat/type", "paragraphFormat/bulletFormat/style");
+    }
+    range.load(props.join(","));
     await context.sync();
+  } catch {
+    try {
+      range.load("paragraphFormat/indentLevel,paragraphFormat/bulletFormat/visible");
+      await context.sync();
+    } catch {
+      // ignore
+    }
+    try {
+      range.load("paragraphFormat/horizontalAlignment");
+      await context.sync();
+    } catch {
+      // ignore
+    }
+    if (wantsBulletDetails) {
+      try {
+        range.load("paragraphFormat/bulletFormat/type,paragraphFormat/bulletFormat/style");
+        await context.sync();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  try {
+    out.indentLevel = range.paragraphFormat.indentLevel ?? undefined;
+  } catch {
+    // ignore
+  }
+  try {
+    out.bulletVisible = range.paragraphFormat.bulletFormat.visible ?? undefined;
+  } catch {
+    // ignore
+  }
+  try {
     out.horizontalAlignment = range.paragraphFormat.horizontalAlignment as any;
   } catch {
     // ignore
   }
-
-  if (isApiSupported("1.10")) {
+  if (wantsBulletDetails) {
     try {
-      range.load("paragraphFormat/bulletFormat/type,paragraphFormat/bulletFormat/style");
-      await context.sync();
       out.bulletType = range.paragraphFormat.bulletFormat.type as any;
+    } catch {
+      // ignore
+    }
+    try {
       out.bulletStyle = range.paragraphFormat.bulletFormat.style as any;
     } catch {
       // ignore
@@ -99,11 +136,15 @@ export async function extractShapeTextParagraphs(
   context: PowerPoint.RequestContext,
   textRange: PowerPoint.TextRange,
   slideIndex: number,
-  shapeId: string
+  shapeId: string,
+  knownText?: string
 ): Promise<Paragraph[]> {
-  textRange.load("text");
-  await context.sync();
-  const text = textRange.text ?? "";
+  let text = knownText;
+  if (text === undefined) {
+    textRange.load("text");
+    await context.sync();
+    text = textRange.text ?? "";
+  }
   if (!text) return [];
 
   const paras = text.split("\n");
@@ -140,7 +181,7 @@ async function extractRunsByFont(
   const n = paragraphText.length;
   if (n === 0) return [{ text: "", font: defaultFontSnapshot() }];
 
-  const MAX_CHAR_SCAN = 600;
+  const MAX_CHAR_SCAN = 1500;
   if (n <= MAX_CHAR_SCAN) {
     return extractRunsByCharScan(context, fullRange, paragraphStart, paragraphText);
   }
