@@ -14,6 +14,8 @@ export interface ShapeTextTarget {
   kind: "shapeText";
   shapeId: string;
   shapeName: string;
+  groupPath: string[];
+  shapePath?: string;
   paragraphs: Paragraph[];
 }
 
@@ -26,6 +28,8 @@ export interface TableCellTarget {
   kind: "tableCell";
   shapeId: string;
   shapeName: string;
+  groupPath: string[];
+  shapePath?: string;
   row: number;
   col: number;
   paragraphId: string;
@@ -76,6 +80,114 @@ function compileIgnoreRegex(pattern: string): RegExp | null {
   }
 }
 
+function shapeKey(shapeId: string, groupPath: string[] = []): string {
+  return groupPath.length ? `${groupPath.join("::")}::${shapeId}` : shapeId;
+}
+
+function shapeLabel(shapeName: string, shapeId: string, groupNamePath: string[] = []): string {
+  const base = shapeName || shapeId;
+  if (!groupNamePath.length) return base;
+  return `${groupNamePath.join(" / ")} / ${base}`;
+}
+
+async function loadShapesCollection(
+  context: PowerPoint.RequestContext,
+  collection: any
+): Promise<PowerPoint.Shape[]> {
+  if (!collection) return [];
+  try {
+    collection.load("items/id,items/name,items/type");
+    await context.sync();
+    return (collection as any).items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function getGroupChildShapes(
+  context: PowerPoint.RequestContext,
+  shape: PowerPoint.Shape,
+  logger?: Logger,
+  label?: string
+): Promise<PowerPoint.Shape[]> {
+  const candidates = [
+    () => (shape as any).group?.shapes,
+    () => (shape as any).shapes,
+    () => (shape as any).groupItems
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const collection = candidate();
+      const items = await loadShapesCollection(context, collection);
+      if (items.length) return items;
+    } catch {
+      // try next candidate
+    }
+  }
+
+  if (logger && label) {
+    logger.log(`Group non accessible: ${label}`, "dim");
+  }
+  return [];
+}
+
+async function walkShapeItems(
+  context: PowerPoint.RequestContext,
+  items: PowerPoint.Shape[],
+  groupPath: string[],
+  groupNamePath: string[],
+  ignore: RegExp | null,
+  logger: Logger | undefined,
+  visitor: (shape: PowerPoint.Shape, groupPath: string[], groupNamePath: string[]) => Promise<void>
+): Promise<void> {
+  for (const shape of items) {
+    const shapeId = shape.id;
+    const shapeName = shape.name ?? "";
+
+    if (ignore && ignore.test(shapeName)) {
+      logger?.log(`Ignoré: ${shapeLabel(shapeName, shapeId, groupNamePath)}`, "dim");
+      continue;
+    }
+
+    if ((shape.type as any) === PowerPoint.ShapeType.group) {
+      const label = shapeLabel(shapeName, shapeId, groupNamePath);
+      const nextGroupPath = [...groupPath, shapeId];
+      const nextGroupNamePath = [...groupNamePath, shapeName || shapeId];
+      const children = await getGroupChildShapes(context, shape, logger, label);
+      if (!children.length) continue;
+      await walkShapeItems(context, children, nextGroupPath, nextGroupNamePath, ignore, logger, visitor);
+      continue;
+    }
+
+    await visitor(shape, groupPath, groupNamePath);
+  }
+}
+
+async function walkShapes(
+  context: PowerPoint.RequestContext,
+  collection: any,
+  ignore: RegExp | null,
+  logger: Logger | undefined,
+  visitor: (shape: PowerPoint.Shape, groupPath: string[], groupNamePath: string[]) => Promise<void>
+): Promise<void> {
+  const items = await loadShapesCollection(context, collection);
+  if (!items.length) return;
+  await walkShapeItems(context, items, [], [], ignore, logger, visitor);
+}
+
+async function buildShapeIndex(
+  context: PowerPoint.RequestContext,
+  slide: PowerPoint.Slide,
+  logger?: Logger
+): Promise<Map<string, PowerPoint.Shape>> {
+  const map = new Map<string, PowerPoint.Shape>();
+  await walkShapes(context, slide.shapes, null, logger, async (shape, groupPath) => {
+    map.set(shapeKey(shape.id, groupPath), shape);
+  });
+  return map;
+}
+
 export async function analyzeScope(settings: Settings, logger?: Logger): Promise<SlideAnalysis[]> {
   const indices = await getSlideIndices(settings.scope);
   const ignore = compileIgnoreRegex(settings.ignoreRegex);
@@ -85,39 +197,33 @@ export async function analyzeScope(settings: Settings, logger?: Logger): Promise
   for (const slideIndex of indices) {
     const analysis = await PowerPoint.run(async (context) => {
       const slide = context.presentation.slides.getItemAt(slideIndex);
-      slide.load("shapes/items/id,shapes/items/name,shapes/items/type");
-      await context.sync();
 
       let textBoxes = 0;
       let tables = 0;
       let paragraphs = 0;
       let characters = 0;
 
-      for (const shape of slide.shapes.items) {
-        const name = shape.name ?? "";
-        if (ignore && ignore.test(name)) continue;
-
+      await walkShapes(context, slide.shapes, ignore, undefined, async (shape) => {
         if ((shape.type as any) === PowerPoint.ShapeType.table) {
           tables++;
           // Approximate: count later
-          continue;
+          return;
         }
-        if ((shape.type as any) === PowerPoint.ShapeType.group) continue;
 
         const tf = shape.getTextFrameOrNullObject();
         tf.load("isNullObject,hasText");
         await context.sync();
-        if (tf.isNullObject || !tf.hasText) continue;
+        if (tf.isNullObject || !tf.hasText) return;
 
         tf.textRange.load("text");
         await context.sync();
         const text = tf.textRange.text ?? "";
-        if (!text.trim()) continue;
+        if (!text.trim()) return;
         textBoxes++;
         const ps = text.split("\n");
         paragraphs += ps.length;
         characters += text.length;
-      }
+      });
 
       return { slideIndex, textBoxes, tables, paragraphs, characters } as SlideAnalysis;
     });
@@ -141,25 +247,15 @@ export async function extractSlideTargets(
 
   return PowerPoint.run(async (context) => {
     const slide = context.presentation.slides.getItemAt(slideIndex);
-    slide.load("shapes/items/id,shapes/items/name,shapes/items/type");
-    await context.sync();
 
     const shapeTextTargets: ShapeTextTarget[] = [];
     const tableCellTargets: TableCellTarget[] = [];
 
-    for (const shape of slide.shapes.items) {
+    await walkShapes(context, slide.shapes, ignore, logger, async (shape, groupPath, groupNamePath) => {
       const shapeId = shape.id;
       const shapeName = shape.name ?? "";
-
-      if (ignore && ignore.test(shapeName)) {
-        logger?.log(`Ignoré: ${shapeName || shapeId}`, "dim");
-        continue;
-      }
-
-      if ((shape.type as any) === PowerPoint.ShapeType.group) {
-        logger?.log(`Group ignoré (limitation Office.js): ${shapeName || shapeId}`, "dim");
-        continue;
-      }
+      const shapePath = shapeLabel(shapeName, shapeId, groupNamePath);
+      const shapeRef = shapeKey(shapeId, groupPath);
 
       if ((shape.type as any) === PowerPoint.ShapeType.table) {
         const table = shape.getTable();
@@ -191,11 +287,13 @@ export async function extractSlideTargets(
             ? runs.map((tr) => ({ text: tr.text ?? "", font: tr.font }))
             : [{ text, font: undefined }];
 
-          const id = `s${slideIndex}_shape${shapeId}_cell${coords[i].r}_${coords[i].c}`;
+          const id = `s${slideIndex}_shape${shapeRef}_cell${coords[i].r}_${coords[i].c}`;
           tableCellTargets.push({
             kind: "tableCell",
             shapeId,
             shapeName,
+            groupPath: [...groupPath],
+            shapePath,
             row: coords[i].r,
             col: coords[i].c,
             paragraphId: id,
@@ -203,27 +301,34 @@ export async function extractSlideTargets(
             runs: runSnapshots
           });
         }
-        continue;
+        return;
       }
 
       const tf = shape.getTextFrameOrNullObject();
       tf.load("isNullObject,hasText");
       await context.sync();
-      if (tf.isNullObject || !tf.hasText) continue;
+      if (tf.isNullObject || !tf.hasText) return;
 
       const paragraphs = await extractShapeTextParagraphs(
         context,
         tf.textRange,
         slideIndex,
-        shapeId,
+        shapeRef,
         shapeName
       );
 
       const useful = paragraphs.some((p) => p.runs.some((r) => r.text.trim().length > 0));
-      if (!useful) continue;
+      if (!useful) return;
 
-      shapeTextTargets.push({ kind: "shapeText", shapeId, shapeName, paragraphs });
-    }
+      shapeTextTargets.push({
+        kind: "shapeText",
+        shapeId,
+        shapeName,
+        groupPath: [...groupPath],
+        shapePath,
+        paragraphs
+      });
+    });
 
     logger?.log(
       `Slide ${slideIndex + 1}: ${shapeTextTargets.length} shape(s) texte, ${tableCellTargets.length} cellule(s) de table`,
@@ -397,10 +502,16 @@ export async function applySlideTranslations(
 ): Promise<void> {
   await PowerPoint.run(async (context) => {
     const slide = context.presentation.slides.getItemAt(slideIndex);
+    const shapeIndex = await buildShapeIndex(context, slide, logger);
 
     // Shapes (text frames)
     for (const st of targets.shapeTextTargets) {
-      const shape = slide.shapes.getItem(st.shapeId);
+      const key = shapeKey(st.shapeId, st.groupPath);
+      const shape = shapeIndex.get(key) ?? slide.shapes.getItem(st.shapeId);
+      if (!shape) {
+        logger?.log(`Forme introuvable: ${st.shapePath || st.shapeName || st.shapeId}`, "dim");
+        continue;
+      }
       const tf = shape.getTextFrameOrNullObject();
       tf.load("isNullObject,hasText");
       await context.sync();
@@ -418,12 +529,17 @@ export async function applySlideTranslations(
       queueParagraphFormats(tf.textRange, composed.paragraphSpans);
       queueFontRuns(tf.textRange, composed.runSpans, settings);
 
-      logger?.log(`Appliqué: ${st.shapeName || st.shapeId}`, "dim");
+      logger?.log(`Appliqué: ${st.shapePath || st.shapeName || st.shapeId}`, "dim");
     }
 
     // Tables
     for (const tc of targets.tableCellTargets) {
-      const shape = slide.shapes.getItem(tc.shapeId);
+      const key = shapeKey(tc.shapeId, tc.groupPath);
+      const shape = shapeIndex.get(key) ?? slide.shapes.getItem(tc.shapeId);
+      if (!shape) {
+        logger?.log(`Table introuvable: ${tc.shapePath || tc.shapeName || tc.shapeId}`, "dim");
+        continue;
+      }
       const table = shape.getTable();
       const cell = table.getCellOrNullObject(tc.row, tc.col);
 
