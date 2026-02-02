@@ -3,8 +3,6 @@ export type Mode = "apply" | "preview";
 
 export interface Settings {
   apiKey: string;
-  model: string;
-  temperature: number;
   fromLang: string; // code or "auto"
   toLang: string; // code
   scope: Scope;

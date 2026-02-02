@@ -5,8 +5,6 @@ const STORAGE_KEY = "slideTranslate.settings.v1";
 export function defaultSettings(): Settings {
   return {
     apiKey: "",
-    model: "gpt-5-mini",
-    temperature: 0.15,
     fromLang: "auto",
     toLang: "en",
     scope: "current",

@@ -1,6 +1,8 @@
 import type { Settings, TranslationResult } from "../utils/types";
 import { labelFor } from "../utils/language";
 
+const MODEL_NAME = "gpt-5-mini";
+
 export class OpenAIError extends Error {
   constructor(
     message: string,
@@ -45,9 +47,8 @@ export async function testOpenAIKey(settings: Settings): Promise<void> {
       Authorization: `Bearer ${settings.apiKey}`
     },
     body: JSON.stringify({
-      model: settings.model || "gpt-5-mini",
+      model: MODEL_NAME,
       input: "Reply with the single word OK.",
-      temperature: 0,
       store: false
     })
   });
@@ -140,8 +141,7 @@ export async function translateBatch(items: TranslateBatchItem[], settings: Sett
       Authorization: `Bearer ${settings.apiKey}`
     },
     body: JSON.stringify({
-      model: settings.model,
-      temperature: settings.temperature,
+      model: MODEL_NAME,
       store: false,
       input: [
         { role: "system", content: instructions },

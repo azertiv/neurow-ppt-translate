@@ -38,8 +38,6 @@ function readUI(): Settings {
   const next: Settings = {
     ...settings,
     apiKey: ( $("apiKey") as HTMLInputElement).value.trim(),
-    model: ( $("model") as HTMLSelectElement).value,
-    temperature: Number(( $("temperature") as HTMLInputElement).value),
     fromLang: ( $("fromLang") as HTMLSelectElement).value,
     toLang: ( $("toLang") as HTMLSelectElement).value,
     keepLineBreaks: ( $("keepLineBreaks") as HTMLInputElement).checked,
@@ -54,8 +52,6 @@ function readUI(): Settings {
 
 async function writeUI(s: Settings) {
   ( $("apiKey") as HTMLInputElement).value = s.apiKey;
-  ( $("model") as HTMLSelectElement).value = s.model;
-  ( $("temperature") as HTMLInputElement).value = String(s.temperature);
   ( $("fromLang") as HTMLSelectElement).value = s.fromLang;
   ( $("toLang") as HTMLSelectElement).value = s.toLang;
   ( $("keepLineBreaks") as HTMLInputElement).checked = s.keepLineBreaks;
@@ -161,8 +157,6 @@ function bindEvents() {
   // auto-save on changes
   const autosaveIds = [
     "apiKey",
-    "model",
-    "temperature",
     "fromLang",
     "toLang",
     "keepLineBreaks",
