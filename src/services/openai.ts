@@ -1,7 +1,7 @@
 import type { Settings, TranslationResult } from "../utils/types";
 import { labelFor } from "../utils/language";
 
-const MODEL_NAME = "gpt-5-mini";
+const MODEL_NAME = "gpt-5-nano";
 
 export class OpenAIError extends Error {
   constructor(

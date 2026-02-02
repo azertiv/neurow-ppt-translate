@@ -8,6 +8,7 @@ import {
   queueFontRuns,
   queueParagraphFormats
 } from "./formatting";
+import { isNonTranslatable } from "../utils/text";
 
 export interface ShapeTextTarget {
   kind: "shapeText";
@@ -235,20 +236,25 @@ export async function extractSlideTargets(
 
 function buildTranslateItems(targets: SlideTargets): TranslateBatchItem[] {
   const items: TranslateBatchItem[] = [];
+  const isSkippable = (runs: { text: string }[]) => runs.every((r) => isNonTranslatable(r.text));
   for (const t of targets.shapeTextTargets) {
     for (const p of t.paragraphs) {
+      const runs = p.runs.map((r, idx) => ({ index: idx, text: r.text }));
+      if (isSkippable(runs)) continue;
       items.push({
         paragraphId: p.id,
         originalChars: p.originalCharCount,
-        runs: p.runs.map((r, idx) => ({ index: idx, text: r.text }))
+        runs
       });
     }
   }
   for (const t of targets.tableCellTargets) {
+    const runs = t.runs.map((r, idx) => ({ index: idx, text: r.text }));
+    if (isSkippable(runs)) continue;
     items.push({
       paragraphId: t.paragraphId,
       originalChars: t.originalChars,
-      runs: t.runs.map((r, idx) => ({ index: idx, text: r.text }))
+      runs
     });
   }
   return items;
@@ -256,8 +262,8 @@ function buildTranslateItems(targets: SlideTargets): TranslateBatchItem[] {
 
 function chunkByChars<T extends { originalChars: number }>(
   items: T[],
-  maxChars = 6000,
-  maxItems = 35
+  maxChars = 12000,
+  maxItems = 60
 ): T[][] {
   const chunks: T[][] = [];
   let current: T[] = [];
@@ -275,55 +281,111 @@ function chunkByChars<T extends { originalChars: number }>(
   return chunks;
 }
 
+function translateKey(item: TranslateBatchItem): string {
+  return JSON.stringify(item.runs.map((r) => r.text));
+}
+
+async function translateChunks(
+  chunks: TranslateBatchItem[][],
+  settings: Settings,
+  logger: Logger,
+  abortSignal?: AbortSignal,
+  concurrency = 3
+): Promise<TranslationResult[]> {
+  if (!chunks.length) return [];
+
+  const results: TranslationResult[] = [];
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, chunks.length) }, async () => {
+    while (true) {
+      if (abortSignal?.aborted) break;
+      const i = cursor++;
+      if (i >= chunks.length) break;
+      logger.log(`OpenAI: lot ${i + 1}/${chunks.length}…`, "dim");
+      const res = await translateBatch(chunks[i], settings);
+      results.push(...res);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
 export async function translateAndMaybeApplySlide(
   targets: SlideTargets,
   settings: Settings,
   logger: Logger,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  translationCache?: Map<string, { translatedRuns: { index: number; text: string }[] }>
 ): Promise<{ translated: number; preview: string }>
 {
   const items = buildTranslateItems(targets);
   if (!items.length) return { translated: 0, preview: "" };
 
-  const chunks = chunkByChars(items);
+  const cache = translationCache ?? new Map<string, { translatedRuns: { index: number; text: string }[] }>();
+  const pending: TranslateBatchItem[] = [];
+  const keyToIds = new Map<string, string[]>();
+  const idToKey = new Map<string, string>();
   const allResults: TranslationResult[] = [];
 
-  for (let i = 0; i < chunks.length; i++) {
-    if (abortSignal?.aborted) break;
-    logger.log(`OpenAI: lot ${i + 1}/${chunks.length}…`, "dim");
-    const res = await translateBatch(chunks[i], settings);
-    allResults.push(...res);
+  for (const item of items) {
+    const key = translateKey(item);
+    const cached = cache.get(key);
+    if (cached) {
+      allResults.push({ paragraphId: item.paragraphId, translatedRuns: cached.translatedRuns });
+      continue;
+    }
+    const ids = keyToIds.get(key);
+    if (ids) {
+      ids.push(item.paragraphId);
+    } else {
+      keyToIds.set(key, [item.paragraphId]);
+      idToKey.set(item.paragraphId, key);
+      pending.push(item);
+    }
+  }
+
+  const chunks = chunkByChars(pending);
+  const translated = await translateChunks(chunks, settings, logger, abortSignal);
+  for (const r of translated) {
+    const key = idToKey.get(r.paragraphId);
+    if (!key) continue;
+    cache.set(key, { translatedRuns: r.translatedRuns });
+    const ids = keyToIds.get(key) ?? [];
+    for (const id of ids) {
+      allResults.push({ paragraphId: id, translatedRuns: r.translatedRuns });
+    }
   }
 
   const map = new Map<string, TranslationResult>();
   for (const r of allResults) map.set(r.paragraphId, r);
 
-  // Build a small preview (first 3 paragraphs)
-  const previewParts: string[] = [];
-  let previewCount = 0;
-  for (const st of targets.shapeTextTargets) {
-    for (const p of st.paragraphs) {
-      const tr = map.get(p.id);
-      if (!tr) continue;
-      const applied = applyRunTranslations(p, tr.translatedRuns);
-      const text = applied.runs.map((r) => r.text).join("");
-      if (text.trim()) {
-        previewParts.push(text);
-        previewCount++;
+  if (settings.mode === "preview") {
+    // Build a small preview (first 3 paragraphs)
+    const previewParts: string[] = [];
+    let previewCount = 0;
+    for (const st of targets.shapeTextTargets) {
+      for (const p of st.paragraphs) {
+        const tr = map.get(p.id);
+        if (!tr) continue;
+        const applied = applyRunTranslations(p, tr.translatedRuns);
+        const text = applied.runs.map((r) => r.text).join("");
+        if (text.trim()) {
+          previewParts.push(text);
+          previewCount++;
+        }
+        if (previewCount >= 3) break;
       }
       if (previewCount >= 3) break;
     }
-    if (previewCount >= 3) break;
-  }
 
-  if (settings.mode === "preview") {
     return { translated: map.size, preview: previewParts.join("\n\n") };
   }
 
   // Apply
   await applySlideTranslations(targets.slideIndex, targets, map, settings, logger);
 
-  return { translated: map.size, preview: previewParts.join("\n\n") };
+  return { translated: map.size, preview: "" };
 }
 
 export async function applySlideTranslations(
@@ -427,6 +489,7 @@ export async function translateScope(
   const total = indices.length;
   let translatedTotal = 0;
   let preview = "";
+  const translationCache = new Map<string, { translatedRuns: { index: number; text: string }[] }>();
 
   for (let i = 0; i < indices.length; i++) {
     if (abortSignal?.aborted) break;
@@ -450,7 +513,7 @@ export async function translateScope(
     onProgress(i, total, `Traduction slide ${slideIndex + 1}/${total}`);
     logger.log(`Slide ${slideIndex + 1} — traduction (${count} bloc(s))…`);
 
-    const res = await translateAndMaybeApplySlide(targets, settings, logger, abortSignal);
+    const res = await translateAndMaybeApplySlide(targets, settings, logger, abortSignal, translationCache);
     translatedTotal += res.translated;
     if (!preview && res.preview) preview = res.preview;
 
