@@ -1,4 +1,4 @@
-import type { Paragraph, Settings, SlideAnalysis, TranslationResult } from "../utils/types";
+import type { FontSnapshot, Paragraph, Settings, SlideAnalysis, TranslationResult } from "../utils/types";
 import type { TranslateBatchItem } from "./openai";
 import { Logger } from "./logger";
 import { translateBatch } from "./openai";
@@ -386,6 +386,23 @@ function chunkByChars<T extends { originalChars: number }>(
   return chunks;
 }
 
+function coerceFontSnapshot(font?: any): FontSnapshot {
+  return {
+    allCaps: Boolean(font?.allCaps ?? false),
+    bold: Boolean(font?.bold ?? false),
+    color: (font?.color as any) ?? "#FFFFFF",
+    doubleStrikethrough: Boolean(font?.doubleStrikethrough ?? false),
+    italic: Boolean(font?.italic ?? false),
+    name: (font?.name as any) ?? "",
+    size: Number(font?.size ?? 12),
+    smallCaps: Boolean(font?.smallCaps ?? false),
+    strikethrough: Boolean(font?.strikethrough ?? false),
+    subscript: Boolean(font?.subscript ?? false),
+    superscript: Boolean(font?.superscript ?? false),
+    underline: (font?.underline as any) ?? "None"
+  };
+}
+
 function translateKey(item: TranslateBatchItem): string {
   return JSON.stringify(item.runs.map((r) => r.text));
 }
@@ -552,7 +569,22 @@ export async function applySlideTranslations(
         font: r.font
       }));
 
-      (cell as any).set({ textRuns: newTextRuns });
+      const cellAny = cell as any;
+      if (cellAny && typeof cellAny.set === "function") {
+        cellAny.set({ textRuns: newTextRuns });
+      } else {
+        const fullText = newTextRuns.map((r) => r.text).join("");
+        const range = cell.textRange;
+        range.text = fullText;
+        let offset = 0;
+        const spans = newTextRuns.map((r) => {
+          const length = r.text.length;
+          const span = { start: offset, length, font: coerceFontSnapshot(r.font) };
+          offset += length;
+          return span;
+        });
+        queueFontRuns(range, spans, settings);
+      }
     }
 
     await context.sync();
